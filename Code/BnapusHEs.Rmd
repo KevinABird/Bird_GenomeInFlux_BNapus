@@ -1,0 +1,219 @@
+---
+title: "NapusHEs"
+author: "Kevin Bird"
+date: "May 1, 2018"
+output: html_document
+---
+
+```{r,echo=F}
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(zoo)
+
+
+GetSyntelogPairs<- function(R500File,TO1000File){
+TO1000<-read.delim(file=TO1000File, header=FALSE)
+R500<-read.delim(file=R500File, header=FALSE)
+
+  
+colnames(TO1000)<-c("TO1000Chr","TO1000Start","TO1000Stop","TO1000","TO1000Something","TO1000Strand","TO1000Read.Depth","TO1000Coverage","TO1000Size","TO1000Fraction.Covered")
+
+
+colnames(R500)<-c("R500Chr","R500Start","R500Stop","R500","R500Something","R500Strand","R500Read.Depth","R500Coverage","R500Size","R500Fraction.Covered")
+
+R500 %>% mutate_if(is.factor,as.character)-> R500
+TO1000 %>% mutate_if(is.factor,as.character)-> TO1000
+TO1000.R500 %>% mutate_if(is.factor,as.character)-> TO1000.R500
+
+
+Ortho<-TO1000 %>% inner_join(TO1000.R500,by="TO1000")%>% inner_join(R500,by="R500")
+return(Ortho)
+}
+
+TO1000.R500 <- read.delim("~/TO1000.R500.anchors", header=FALSE, comment.char="#")
+colnames(TO1000.R500)<-c("TO1000","R500","BlockSize")
+
+R500SyntelogFiles<-list.files(path="~/WGS/",pattern="R500",full.names = TRUE)
+TO1000SyntelogFiles<-list.files(path="~/WGS/",pattern="TO1000",full.names = TRUE)
+
+BNapusArray<-c()
+
+for (Indiv in 1:length(R500SyntelogFiles)){
+  BNapusArray[[Indiv]] <-GetSyntelogPairs(R500SyntelogFiles[Indiv],TO1000SyntelogFiles[Indiv])
+}
+
+
+#Ds_1100S10Ortho<- Ds_1100S10Ortho %>% mutate(ReadDepth=((R500Read.Depth/R500Size)/sum(R500Read.Depth/R500Size))/((R500Read.Depth/R500Size)/sum(R500Read.Depth/R500Size)+(TO1000Read.Depth/TO1000Size)/sum(TO1000Read.Depth/TO1000Size))) 
+for (i in 1:length(BNapusArray)){
+
+  BNapusArray[[i]]<- BNapusArray[[i]] %>% mutate(R500ReadDepth=((R500Read.Depth/R500Size)/(sum(R500Read.Depth/R500Size)/1000000))/((R500Read.Depth/R500Size)/(sum(R500Read.Depth/R500Size)/1000000)+(TO1000Read.Depth/TO1000Size)/(sum(TO1000Read.Depth/TO1000Size)/1000000))) 
+
+BNapusArray[[i]]<- BNapusArray[[i]] %>% mutate(TO1000ReadDepth=((TO1000Read.Depth/TO1000Size)/(sum(TO1000Read.Depth/TO1000Size)/1000000))/((R500Read.Depth/R500Size)/(sum(R500Read.Depth/R500Size)/1000000)+(TO1000Read.Depth/TO1000Size)/(sum(TO1000Read.Depth/TO1000Size)/1000000))) 
+}
+
+names(BNapusArray)<-c("Ds-100S1","Ds-100S10","Ds-100S5","Ds-1100S1","Ds-1100S10","Ds-1100S5","Ds-200S1","Ds-200S10","Ds-200S5","Ds-300S1","Ds-300S10","Ds-300S5","Ds-400S1","Ds-400S10","Ds-400S5","Ds-600S1","Ds-600S10","Ds-600S5")
+
+for (i in 1:length(BNapusArray)){
+if (grepl("S5",names(BNapusArray[i]),fixed = TRUE)){
+  BNapusArray[[i]]$Generation<-"S5"}
+  else if (grepl("S10",names(BNapusArray[i]),fixed = TRUE)){
+  BNapusArray[[i]]$Generation<-"S10"}
+  else {
+    BNapusArray[[i]]$Generation<-"S1"
+  }
+}
+
+
+
+for (n in 1:length(BNapusArray)){
+BNapusArray[[n]]<- mutate(BNapusArray[[n]],RollMeanR500Depth = rollapply(group_by(BNapusArray[[n]],R500Chr)$R500ReadDepth,width = 25, by = 1, FUN = mean, na.rm = TRUE,partial=T)) 
+
+BNapusArray[[n]]<- mutate(BNapusArray[[n]],RollMeanTO1000Depth = rollapply(group_by(BNapusArray[[n]],TO1000Chr)$TO1000ReadDepth,width = 25, by = 1, FUN = mean, na.rm = TRUE,partial=T)) 
+
+
+}
+
+FindRearrangements <- function(data, MinThresh,MaxThresh, window,step){
+  total <- length(data)
+  spots <- seq(from=1+window, to=(total-window), by=step)
+  result <- vector(length = length(spots))
+  for(i in 1:length(spots)){
+    result[i] <- (data[(spots[i]-window):(spots[i]+window)]) >= MinThresh && (data[(spots[i]-window):(spots[i]+window)])< MaxThresh
+  }
+  return(result)
+}
+ZerotoFourHEList<-vector("list", length = length(BNapusArray))
+for (Indiv in 1:length(BNapusArray)){
+
+BNapusArray[[Indiv]]$BlockID<-NA
+BNapusArray[[Indiv]]<-group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)
+ZerotoFourHEs<-FindRearrangements(group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)$RollMeanTO1000Depth,-0.1,0.2,85,1)
+Runs<-rle(ZerotoFourHEs)
+myruns<-which(Runs$values == TRUE & Runs$lengths >= 10)
+runs.lengths.cumsum = cumsum(Runs$lengths)
+ends = runs.lengths.cumsum[myruns]
+
+newindex = ifelse(myruns>1, myruns-1, 0)
+starts = runs.lengths.cumsum[newindex] + 1
+if (0 %in% newindex) starts = c(1,starts)
+BlockList<-c()
+if(length(starts) > 0){
+for(n in seq(1,length(starts))){BlockList<-c(BlockList,starts[n]:ends[n])
+BNapusArray[[Indiv]][starts[n]:ends[n],]$BlockID <-sprintf("0:4 Block %s",n)}
+ZerotoFourHEList[[Indiv]]<-BNapusArray[[Indiv]][BlockList,]
+ZerotoFourHEList[[Indiv]]$Ratio<-"0:4"
+} else{
+  ZerotoFourHEList[[Indiv]]<-list(c())}
+}
+
+OnetoThreeHEList<-vector("list", length = length(BNapusArray))
+for (Indiv in 1:length(BNapusArray)){
+
+BNapusArray[[Indiv]]$BlockID<-NA
+BNapusArray[[Indiv]]<-group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)
+OnetoThreeHEs<-FindRearrangements(group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)$RollMeanTO1000Depth,0.2,0.4,85,1)
+Runs<-rle(OnetoThreeHEs)
+myruns<-which(Runs$values == TRUE & Runs$lengths >= 10)
+runs.lengths.cumsum = cumsum(Runs$lengths)
+ends = runs.lengths.cumsum[myruns]
+
+newindex = ifelse(myruns>1, myruns-1, 0)
+starts = runs.lengths.cumsum[newindex] + 1
+if (0 %in% newindex) starts = c(1,starts)
+BlockList<-c()
+if(length(starts) > 0){
+for(n in seq(1,length(starts))){BlockList<-c(BlockList,starts[n]:ends[n])
+BNapusArray[[Indiv]][starts[n]:ends[n],]$BlockID <-sprintf("1:3 Block %s",n)}
+OnetoThreeHEList[[Indiv]]<-BNapusArray[[Indiv]][BlockList,]
+OnetoThreeHEList[[Indiv]]$Ratio<-"1:3"
+} else{
+  OnetoThreeHEList[[Indiv]]<-list(c())}
+}
+
+TwotoTwoHEList<-vector("list", length = length(BNapusArray))
+for (Indiv in 1:length(BNapusArray)){
+
+BNapusArray[[Indiv]]$BlockID<-NA
+BNapusArray[[Indiv]]<-group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)
+TwotoTwoHEs<-FindRearrangements(group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)$RollMeanTO1000Depth,0.4,0.6,85,1)
+Runs<-rle(TwotoTwoHEs)
+myruns<-which(Runs$values == TRUE & Runs$lengths >= 10)
+runs.lengths.cumsum = cumsum(Runs$lengths)
+ends = runs.lengths.cumsum[myruns]
+
+newindex = ifelse(myruns>1, myruns-1, 0)
+starts = runs.lengths.cumsum[newindex] + 1
+if (0 %in% newindex) starts = c(1,starts)
+BlockList<-c()
+if(length(starts) > 0){
+for(n in seq(1,length(starts))){BlockList<-c(BlockList,starts[n]:ends[n])
+BNapusArray[[Indiv]][starts[n]:ends[n],]$BlockID <-sprintf("2:2 Block %s",n)}
+TwotoTwoHEList[[Indiv]]<-BNapusArray[[Indiv]][BlockList,]
+TwotoTwoHEList[[Indiv]]$Ratio<-"2:2"
+} else{
+  TwotoTwoHEList[[Indiv]]<-list(c())}
+}
+
+ThreetoOneHEList<-vector("list", length = length(BNapusArray))
+for (Indiv in 1:length(BNapusArray)){
+
+BNapusArray[[Indiv]]$BlockID<-NA
+BNapusArray[[Indiv]]<-group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)
+ThreetoOneHEs<-FindRearrangements(group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)$RollMeanTO1000Depth,0.6,0.8,85,1)
+Runs<-rle(ThreetoOneHEs)
+myruns<-which(Runs$values == TRUE & Runs$lengths >= 10)
+runs.lengths.cumsum = cumsum(Runs$lengths)
+ends = runs.lengths.cumsum[myruns]
+
+newindex = ifelse(myruns>1, myruns-1, 0)
+starts = runs.lengths.cumsum[newindex] + 1
+if (0 %in% newindex) starts = c(1,starts)
+BlockList<-c()
+if(length(starts) > 0){
+for(n in seq(1,length(starts))){BlockList<-c(BlockList,starts[n]:ends[n])
+BNapusArray[[Indiv]][starts[n]:ends[n],]$BlockID <-sprintf("3:1 Block %s",n)}
+ThreetoOneHEList[[Indiv]]<-BNapusArray[[Indiv]][BlockList,]
+ThreetoOneHEList[[Indiv]]$Ratio<-"3:1"
+} else{
+  ThreetoOneHEList[[Indiv]]<-list(c())}
+}
+
+FourtoZeroHEList<-vector("list", length = length(BNapusArray))
+for (Indiv in 1:length(BNapusArray)){
+
+BNapusArray[[Indiv]]$BlockID<-NA
+BNapusArray[[Indiv]]<-group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)
+FourtoZeroHEs<-FindRearrangements(group_by(BNapusArray[[Indiv]],Generation,TO1000Chr)$RollMeanTO1000Depth,0.8,1.01,85,1)
+Runs<-rle(FourtoZeroHEs)
+myruns<-which(Runs$values == TRUE & Runs$lengths >= 10)
+runs.lengths.cumsum = cumsum(Runs$lengths)
+ends = runs.lengths.cumsum[myruns]
+
+newindex = ifelse(myruns>1, myruns-1, 0)
+starts = runs.lengths.cumsum[newindex] + 1
+if (0 %in% newindex) starts = c(1,starts)
+BlockList<-c()
+if(length(starts) > 0){
+for(n in seq(1,length(starts))){BlockList<-c(BlockList,starts[n]:ends[n])
+BNapusArray[[Indiv]][starts[n]:ends[n],]$BlockID <-sprintf("4:0 Block %s",n)}
+FourtoZeroHEList[[Indiv]]<-BNapusArray[[Indiv]][BlockList,]
+FourtoZeroHEList[[Indiv]]$Ratio<-"4:0"
+} else{
+  FourtoZeroHEList[[Indiv]]<-list(c())}
+}
+
+
+list2env(BNapusArray,envir =.GlobalEnv)
+
+names(ZerotoFourHEList)<-c("Ds-100S1ZerotoFour","Ds-100S10ZerotoFour","Ds-100S5ZerotoFour","Ds-1100S1ZerotoFour","Ds-1100S10ZerotoFour","Ds-1100S5ZerotoFour","Ds-200S1ZerotoFour","Ds-200S10ZerotoFour","Ds-200S5ZerotoFour","Ds-300S1ZerotoFour","Ds-300S10ZerotoFour","Ds-300S5ZerotoFour","Ds-400S1ZerotoFour","Ds-400S10ZerotoFour","Ds-400S5ZerotoFour","Ds-600S1ZerotoFour","Ds-600S10ZerotoFour","Ds-600S5ZerotoFour")
+
+names(OnetoThreeHEList)<-c("Ds-100S1OnetoThree","Ds-100S10OnetoThree","Ds-100S5OnetoThree","Ds-1100S1OnetoThree","Ds-1100S10OnetoThree","Ds-1100S5OnetoThree","Ds-200S1OnetoThree","Ds-200S10OnetoThree","Ds-200S5OnetoThree","Ds-300S1OnetoThree","Ds-300S10OnetoThree","Ds-300S5OnetoThree","Ds-400S1OnetoThree","Ds-400S10OnetoThree","Ds-400S5OnetoThree","Ds-600S1OnetoThree","Ds-600S10OnetoThree","Ds-600S5OnetoThree")
+
+names(TwotoTwoHEList)<-c("Ds-100S1TwotoTwo","Ds-100S10TwotoTwo","Ds-100S5TwotoTwo","Ds-1100S1TwotoTwo","Ds-1100S10TwotoTwo","Ds-1100S5TwotoTwo","Ds-200S1TwotoTwo","Ds-200S10TwotoTwo","Ds-200S5TwotoTwo","Ds-300S1TwotoTwo","Ds-300S10TwotoTwo","Ds-300S5TwotoTwo","Ds-400S1TwotoTwo","Ds-400S10TwotoTwo","Ds-400S5TwotoTwo","Ds-600S1TwotoTwo","Ds-600S10TwotoTwo","Ds-600S5TwotoTwo")
+
+names(ThreetoOneHEList)<-c("Ds-100S1ThreetoOne","Ds-100S10ThreetoOne","Ds-100S5ThreetoOne","Ds-1100S1ThreetoOne","Ds-1100S10ThreetoOne","Ds-1100S5ThreetoOne","Ds-200S1ThreetoOne","Ds-200S10ThreetoOne","Ds-200S5ThreetoOne","Ds-300S1ThreetoOne","Ds-300S10ThreetoOne","Ds-300S5ThreetoOne","Ds-400S1ThreetoOne","Ds-400S10ThreetoOne","Ds-400S5ThreetoOne","Ds-600S1ThreetoOne","Ds-600S10ThreetoOne","Ds-600S5ThreetoOne")
+
+names(FourtoZeroHEList)<-c("Ds-100S1FourtoZero","Ds-100S10FourtoZero","Ds-100S5FourtoZero","Ds-1100S1FourtoZero","Ds-1100S10FourtoZero","Ds-1100S5FourtoZero","Ds-200S1FourtoZero","Ds-200S10FourtoZero","Ds-200S5FourtoZero","Ds-300S1FourtoZero","Ds-300S10FourtoZero","Ds-300S5FourtoZero","Ds-400S1FourtoZero","Ds-400S10FourtoZero","Ds-400S5FourtoZero","Ds-600S1FourtoZero","Ds-600S10FourtoZero","Ds-600S5FourtoZero")
+
+
