@@ -133,116 +133,7 @@ names(TwotoTwoHomoeo)<-gsub(names(TwotoTwoHomoeo),pattern = "^",replacement = "R
 ```
 
 
-```{r}
-
-SubgenomeDominanceDFWithHEs<-rbindlist(BNapusRNASeqArray,use.names = T,idcol = "Indiv")
-SubgenomeDominanceDFWithoutHEs<-rbindlist(TwotoTwoHomoeo,use.names = T,idcol = "Indiv")
-
-BNapusRNAHEsOnly<-c()
-for(Individ in names(BNapusRNASeqArray)){
-  BNapusRNAHEsOnly[[Individ]]<-anti_join(BNapusRNASeqArray[[Individ]],TwotoTwoHomoeo[[Individ]],by="TO1000_tName")
-}
-
-SubgenomeDominanceDFOnlyHEs<-rbindlist(BNapusRNAHEsOnly,use.names = T,idcol = "Indiv")
-
-
-Chisq_Comp_w_HE<-c()
-Chisq_HEB<-c()
-for(Individ in names(TwotoTwoHomoeo)){
-  BiasTable_wHEs<-table(BNapusRNASeqArray[[Individ]]$Bias)
-  BiasTable_NoHEs<-table(TwotoTwoHomoeo[[Individ]]$Bias)
-  Chisq_Comp_w_HE[[Individ]]<-chisq.test(x=c(BiasTable_wHEs[[2]],BiasTable_wHEs[[1]]),p=c(BiasTable_NoHEs[[2]]/(BiasTable_NoHEs[[1]]+BiasTable_NoHEs[[2]]),BiasTable_NoHEs[[1]]/(BiasTable_NoHEs[[1]]+BiasTable_NoHEs[[2]])))
-  Chisq_HEB[[Individ]]<-chisq.test(x=c(BiasTable_wHEs[[2]],BiasTable_wHEs[[1]]),p=c(0.5,0.5))
-
-}
-
-HEB_HEComp<-ChiSqTable(Chisq_Comp_w_HE)
-HEB_Test<-ChiSqTable(Chisq_HEB)
-
-sjPlot::tab_df(x = as.data.frame(HEB_HEComp), alternate.rows = T,title = "Homoeolog Expression Bias with and without Homoeologous Exchanges Chi Squared table",file="HEB_HEComp_ChiRes.doc",digits = 3)
-sjPlot::tab_df(x = as.data.frame(HEB_Test), alternate.rows = T,title = "Homoeolog Expression Bias including Homoeologous Exchanges Chi Squared table",file="HEB_HEsp_ChiRes.doc")
-
-
-
-```
-
-```{r aim 2 (HEs and HEB inference),echo=T}
-
-#Breakdown of which HE genes have which subgenome bias
-
-ggplot(data=SubgenomeDominanceDFOnlyHEs,aes(x=Indiv,fill=Bias))+geom_bar(position="stack",stat="count")+theme_cowplot(12)+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_x_discrete(limits=c("RS-100S1", "RS-100S5","RS-100S10", "RS-200S1",   "RS-200S5",   "RS-200S10",  "RS-300S1",   "RS-300S10",  "RS-400S1", "RS-400S5","RS-600S1", "RS-600S5",   "RS-600S10","RS-1100S1",  "RS-1100S5",  "RS-1100S10"))+scale_fill_manual(values=c("blue","red","grey"))
-
-
-#Overlapping density plots of log2 fold chance values when HEs are included and excluded, plotted for all lines.
-
-ggplot()+geom_density(data=SubgenomeDominanceDFWithHEs %>% filter(Indiv != "RS-Parent"),aes(x=L2FC,color="with HEs",group=Indiv))+geom_density(data=SubgenomeDominanceDFWithoutHEs %>% filter(Indiv != "RS-Parent"),aes(x=L2FC,color="without HEs",group=Indiv))+theme_cowplot(12)+geom_vline(xintercept=3.5)+geom_vline(xintercept=-3.5)
-
-
-ggplot()+geom_density(data=SubgenomeDominanceDFWithoutHEs %>% filter(Indiv != "RS-Parent") %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% mutate(Generation = factor(Generation,levels=c("S1","S5","S10"))),aes(x=L2FC,color="without HEs",group=Line))+geom_density(data=SubgenomeDominanceDFWithHEs %>% filter(Indiv != "RS-Parent") %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% mutate(Generation = factor(Generation,levels=c("S1","S5","S10"))),aes(x=L2FC,color="with HEs",group=Line))+theme_cowplot(12)+geom_vline(xintercept=3.5)+geom_vline(xintercept=-3.5)+facet_wrap(~Generation,nrow=3)
-
-
-#TO1000<-ggplot()+geom_smooth(data=BNapusRNASeqArray$`RS-100S1`,aes(x=TO1000Start/1000000,y=BnC_Density,color="With HEs"),alpha=0.5)+geom_smooth(data=TwotoTwoHomoeo$`RS-100S1`,aes(x=TO1000Start/1000000,y=BnC_Density,color="Without HEs"),alpha=0.5)+facet_wrap(~TO1000Chr, scales = 'free_x',nrow=2)+theme_cowplot(12)
-
-#ggplot()+geom_smooth(data=BNapusRNASeqArray$`RS-100S1`,aes(x=TO1000Start/1000000,y=BnA_Density,color="With HEs"),alpha=0.5)+geom_smooth(data=TwotoTwoHomoeo$`RS-100S1`,aes(x=TO1000Start/1000000,y=BnA_Density,color="Without HEs"),alpha=0.5)+facet_wrap(~TO1000Chr, scales = 'free_x',nrow=2)+theme_cowplot(12)
-
-#R500<-ggplot(data=AllGens[[n]],aes(x=R500Start/1000000,y=RollMeanR500Depth,colour=Generation))+geom_line()+facet_wrap(~R500Chr, scales = 'free_x',nrow=2)+labs(x="Chr Pos (Mb)",y="R500:TO1000") + background_grid(major="y",colour.major = "black")+scale_y_continuous(breaks=c(0,0.25,0.5,0.75,1.0),labels= c("0:4","1:3","2:2","3:1","4:0"))+theme(axis.title = element_text(face = "bold"),axis.text=element_text(face = "bold"),legend.title=element_text(face = "bold"))
-
-#NapusPlot<-plot_grid(TO1000,R500,labels=c("BnC", "BnA"),nrow=2,scale = 0.8)
-#ggsave(sprintf("%s-NewDNAPlot.png",names(AllGens[n])),plot=NapusPlot,width = 20,height = 12)
-
-```
-
-
-
-Dosage analysis game plan: Mick Song and Jeremy Coate provide good framework. Dichotmize dosage sensitivity based on their arabidopsis list of Class I and Class II genes (GO annotation, AraCyc, Maere's work, etc)
-
-- two possible approaches 
-1. Group all HE genes and compare their expression variance to parents, break down into Class II and Class I. Could also look at composition of Class II and Class I genes in terms of subgenome bias. Are there more Class I BnC biased pairs?
-2. Analyze all lines separately but in the same way as above.
-
-Take all HE Genes (anti_join BNapusRNASeqArray, TwotoTwoHomoeo)
-
-Assign them GO terms from At orthologs
-- calculate avg dosage response (HE sumTPM/ Parent sumTPM) for GO term
--calculate coefficient of variance (SD/Mean) for GO term
-
-
-#Do HE genes show patterns of compensation/deviation from 1:1 expression?
-```{r dosage stuff,echo=T}
-
-#Comparison to 2:2 expression 
-
-medianDosageShift1<- SubgenomeDominanceDFWithoutHEs %>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName") %>% filter(Indiv != "RS-Parent") %>% summarise(median=median(SumTPM.x/(SumTPM.y/2)))
-
-ggplot(data=SubgenomeDominanceDFWithoutHEs %>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName") %>% filter(Indiv != "RS-Parent"),aes(x=(SumTPM.x/(SumTPM.y/2))))+theme(axis.title = element_text(face = "bold"),axis.text=element_text(face = "bold"),legend.title=element_text(face = "bold"))+geom_histogram(fill="#FC4E07",alpha=0.25,bins=500)+theme_cowplot(12)+geom_vline(xintercept = c(0.5,1,2))+geom_vline(xintercept=medianDosageShift1$median,colour="#FC4E07")+xlab("Dosage Response (Polyploid Expression/Parental Expression)")+xlim(c(0,10))+scale_y_log10()
-
-PolyploidDosageGeneration<-SubgenomeDominanceDFWithoutHEs%>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName")  %>% filter(Indiv != "RS-Parent") %>% separate(Indiv,into=c("Line","Generation"),sep="00")
-
-PolyploidDosageGeneration$Generation<-factor(PolyploidDosageGeneration$Generation,levels=c("S1","S5","S10"))
-
-medianDosageShift3<-PolyploidDosageGeneration %>% group_by(Generation) %>% summarise(median=median(SumTPM.x/((SumTPM.y/2))))
-
-ggplot(data=PolyploidDosageGeneration,aes(x=(SumTPM.x/((SumTPM.y/2)))))+theme(axis.title = element_text(face = "bold"),axis.text=element_text(face = "bold"),legend.title=element_text(face = "bold"))+geom_histogram(aes(fill=Generation),alpha=0.25,bins=500)+theme_cowplot(12)+geom_vline(xintercept = c(0.5,1,2))+geom_vline(data=medianDosageShift3,aes(xintercept = median,colour=Generation))+facet_wrap(~Generation,nrow = 3,scales = "free")+xlab("Dosage Response (Polyploid Expression/Parental Expression)")+xlim(c(0,10))+scale_y_log10()
-
-
-#Plots for HEs
-
-medianDosageShiftAll<-SubgenomeDominanceDFOnlyHEs  %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr =="C4")) %>%filter(TO1000Chr != "C1" & TO1000Chr !="C2" & R500Chr !="A10") %>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName") %>% summarise(median=median(SumTPM.x/(SumTPM.y)))
-
-#Plot Dosage Response curve all lines, generations combined
-ggplot(data=SubgenomeDominanceDFOnlyHEs  %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr =="C4")) %>%filter(TO1000Chr != "C1" & TO1000Chr !="C2" & R500Chr !="A10") %>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName"),aes(x=(SumTPM.x/SumTPM.y)))+theme(axis.title = element_text(face = "bold"),axis.text=element_text(face = "bold"),legend.title=element_text(face = "bold"))+geom_histogram(fill="#FC4E07",alpha=0.25,bins=500)+theme_cowplot(12)+geom_vline(xintercept = c(0.5,1,2))+geom_vline(xintercept=medianDosageShiftAll$median,colour="#FC4E07")+xlab("Dosage Response (HE Expression/Parental Expression)")+xlim(c(0,10))+scale_y_log10()
-
-
-medianDosageShiftByBias<-SubgenomeDominanceDFOnlyHEs %>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName") %>% group_by(Bias.y) %>% summarise(median=median(SumTPM.x/SumTPM.y))
-
-#Plot Dosage Response curve all lines and generations, by subgeome dominance assignment
-ggplot(data=SubgenomeDominanceDFOnlyHEs %>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName") ,aes(x=(SumTPM.x/SumTPM.y)))+theme(axis.title = element_text(face = "bold"),axis.text=element_text(face = "bold"),legend.title=element_text(face = "bold"))+geom_density(aes(fill=Bias.y),alpha=0.25)+theme_cowplot(12)+geom_vline(xintercept = 1)+geom_vline(xintercept=c(0.5,2))+geom_vline(data=medianDosageShiftByBias,aes(xintercept = median,colour=Bias.y))+facet_wrap(~Bias.y,nrow = 3,scales = "free")+xlab("Dosage Response (HE Expression/Parental Expression)")+xlim(c(0,10))
-
-
-
-
-```
-
+Dosage analysis game plan: Mick Song and Jeremy Coate provide good framework. Dichotmize dosage sensitivity based on their arabidopsis list of Class I and Class II genes
 
 ```{r }
 #Get Brassica-Arabidopsis orthologs
@@ -285,8 +176,6 @@ Plot polyploid Response Variance based on GO categories
 
 TwoTwo_Main_Raw<- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% group_by(GO,Class) %>% mutate(sd_exp_response=sd(SumTPM.x/(SumTPM.y/2))) %>% mutate(avg_exp_response= mean(SumTPM.x/(SumTPM.y/2))) %>% mutate(PRV=sd_exp_response/avg_exp_response) %>% summarise(avg_exp_response,sd_exp_response,PRV)  %>% mutate(count=n()) %>% distinct() %>% filter(count>20) 
 
-
-
 TwoTwo_Main_Plot<- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% group_by(GO,Class) %>% mutate(sd_exp_response=sd(SumTPM.x/(SumTPM.y/2))) %>% mutate(avg_exp_response= mean(SumTPM.x/(SumTPM.y/2))) %>% mutate(PRV=sd_exp_response/avg_exp_response) %>% summarise(PRV)  %>% mutate(count=n()) %>% distinct() %>% filter(count>20) 
 
 TwoTwo_Main_Plot %>% ggplot(aes(y=PRV,x=Class,fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+ylab("Polyploid Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
@@ -311,7 +200,7 @@ TwoTwo_Gen_Plot<-TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>%
 
 
 
-```{r Calculate expression response to different kinds of homoeologous exchange events}
+```{r Get expression and GO information for all four kinds of homoeologous exchange events}
 
 #ZeroToFour
 ZerotoFourHE<-list.files(path="~/Documents/Birdetal2020Data_and_Figures/WGS",pattern="ZerotoFour",full.names = T,)
@@ -482,7 +371,7 @@ FourtoZero_w_DosageClassFromGO<-inner_join(SubgenomeDominanceDFFourtoZeroHEs,Bra
 
 ```
 
-```{r}
+```{r Calculate expression response to different kinds of homoeologous exchange events, combine the 4 HE classes, and calculate homoeologous exchange response variance}
 
 #Total Comparison
 ZerotoFour_HERV<-ZerotoFour_w_DosageClassFromGO  %>% filter(R500TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>%  mutate(avg_exp_response=mean(SumTPM.x/((2*R500TPM.y)))) %>% mutate(sd_exp_response=sd(SumTPM.x/((2*R500TPM.y)))) %>% mutate(HERV=sd_exp_response/avg_exp_response) %>% mutate(dosage="0:4")
@@ -543,7 +432,7 @@ HERV_Gen_Plot %>% ggplot(aes(y=avgHERV,x=Generation,fill=Class))+geom_jitter()+g
 
 ```
 
-```{r redo compare HERV and PRV}
+```{r compare HERV and PRV}
 
 #Check Exp Lvl by GO term Class
 
