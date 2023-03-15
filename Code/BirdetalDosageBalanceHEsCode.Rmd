@@ -1,5 +1,5 @@
 ---
-title: "Subgenome Dominance and HEs"
+title: "Genomic balance in allopolyploids"
 author: "Kevin Bird"
 date: "4/26/2021"
 output: html_document
@@ -11,10 +11,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 ```{r}
-library(plyr)
-library(dplyr)
-library(tidyr)
-library(readr)
 library(tidyverse)
 library(ggplot2)
 library(gtools)
@@ -133,11 +129,32 @@ names(TwotoTwoHomoeo)<-gsub(names(TwotoTwoHomoeo),pattern = "^",replacement = "R
 ```
 
 
-Dosage analysis game plan: Mick Song and Jeremy Coate provide good framework. Dichotmize dosage sensitivity based on their arabidopsis list of Class I and Class II genes
+```{r}
+
+SubgenomeDominanceDFWithHEs<-rbindlist(BNapusRNASeqArray,use.names = T,idcol = "Indiv")
+SubgenomeDominanceDFWithoutHEs<-rbindlist(TwotoTwoHomoeo,use.names = T,idcol = "Indiv")
+
+BNapusRNAHEsOnly<-c()
+for(Individ in names(BNapusRNASeqArray)){
+  BNapusRNAHEsOnly[[Individ]]<-anti_join(BNapusRNASeqArray[[Individ]],TwotoTwoHomoeo[[Individ]],by="TO1000_tName")
+}
+
+SubgenomeDominanceDFOnlyHEs<-rbindlist(BNapusRNAHEsOnly,use.names = T,idcol = "Indiv")
+```
+
+Dosage analysis game plan: Mick Song and Jeremy Coate provide good framework. Dichotmize dosage sensitivity based on their arabidopsis list of Class I and Class II genes (GO annotation)
+
+Take all HE Genes (anti_join BNapusRNASeqArray, TwotoTwoHomoeo)
+
+Assign them GO terms from At orthologs
+-calculate avg dosage response (HE sumTPM/ Parent sumTPM) for GO term
+-calculate coefficient of variance (SD/Mean) for GO term
+
 
 ```{r }
 #Get Brassica-Arabidopsis orthologs
 At.Brassica_Syntelogs <- read.csv("~/Documents/SingleCopyProject/At-Brassica_Syntelogs.csv", stringsAsFactors=FALSE)
+#hacky way to deal with the fact that there's a variable number of orthologs and multiple subgenomes in B. oleracea
 At.Brassica_Syntelogs<-At.Brassica_Syntelogs  %>%  separate(LF...Bo,sep = ";",into=c("LF_Bo1","LF_Bo2","LF_Bo3","LF_Bo4","LF_Bo5","LF_Bo6"))   %>%  
 separate(MF1...Bo,sep = ";",into=c("MF1_Bo1","MF1_Bo2","MF1,Bo3"))  %>% 
 separate(MF2...Bo,sep = ";",into=c("MF2_Bo1","MF2_Bo2","MF2_Bo3","MF2_Bo4"))  %>% 
@@ -178,7 +195,7 @@ TwoTwo_Main_Raw<- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>
 
 TwoTwo_Main_Plot<- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% group_by(GO,Class) %>% mutate(sd_exp_response=sd(SumTPM.x/(SumTPM.y/2))) %>% mutate(avg_exp_response= mean(SumTPM.x/(SumTPM.y/2))) %>% mutate(PRV=sd_exp_response/avg_exp_response) %>% summarise(PRV)  %>% mutate(count=n()) %>% distinct() %>% filter(count>20) 
 
-TwoTwo_Main_Plot %>% ggplot(aes(y=PRV,x=Class,fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+ylab("Polyploid Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
+TwoTwo_Main_Plot %>% ggplot(aes(y=PRV,x=Class,fill=Class))+geom_point(position=position_jitterdodge(dodge.width = .75,jitter.width = .25))+geom_boxplot(outlier.shape = NA,alpha=0.75,width=0.5)+ylab("Polyploid Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
 
 #Plot for Subgenome bias and dosage classes across all lines
 TwoTwo_HEB_Raw <- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% group_by(GO,Class,Bias.y) %>% mutate(sd_exp_response=sd(SumTPM.x/(SumTPM.y/2))) %>% mutate(avg_exp_response= mean(SumTPM.x/(SumTPM.y/2))) %>% mutate(PRV=sd_exp_response/avg_exp_response) %>% summarise(avg_exp_response,sd_exp_response,PRV)  %>% mutate(count=n()) %>% distinct() 
@@ -186,7 +203,7 @@ TwoTwo_HEB_Raw <- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>
 
 TwoTwo_HEB_Plot <- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% group_by(GO,Class,Bias.y) %>% mutate(sd_exp_response=sd(SumTPM.x/(SumTPM.y/2))) %>% mutate(avg_exp_response= mean(SumTPM.x/(SumTPM.y/2))) %>% mutate(PRV=sd_exp_response/avg_exp_response) %>% summarise(PRV)  %>% mutate(count=n()) %>% distinct() %>% filter(count>20) 
 
-TwoTwo_HEB_Plot %>% ggplot(aes(y=PRV,x=Bias.y,fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+ylab("Polyploid Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
+TwoTwo_HEB_Plot %>% ggplot(aes(y=PRV,x=Bias.y,fill=Class))+geom_point(position=position_jitterdodge(dodge.width = .75,jitter.width = .25))+geom_boxplot(outlier.shape = NA,alpha=0.75)+ylab("Polyploid Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
 
 #Plot by generation
 
@@ -194,13 +211,37 @@ TwoTwo_Gen_Raw<- TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>%
  
 TwoTwo_Gen_Plot<-TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% group_by(GO,Class,Generation) %>% mutate(sd_exp_response=sd(SumTPM.x/(SumTPM.y/2))) %>% mutate(avg_exp_response= mean(SumTPM.x/(SumTPM.y/2))) %>% mutate(PRV=sd_exp_response/avg_exp_response) %>% summarise(PRV)  %>% mutate(count=n()) %>% distinct() %>% filter(count>20) 
 
-  TwoTwo_Gen_Plot%>% ggplot(aes(y=PRV,x=Generation,fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+ylab("Polyploid Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)+scale_x_discrete(limits=c("S1","S5","S10"))
+TwoTwo_Gen_Plot%>% ggplot(aes(y=PRV,x=Generation,fill=Class))+geom_point(position=position_jitterdodge(dodge.width = .75,jitter.width = .25))+geom_boxplot(outlier.shape = NA,alpha=0.75)+ylab("Polyploid Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)+scale_x_discrete(limits=c("S1","S5","S10"))
 
 ```
+```{r Analysis of HERV}
+#Plot Homoeologous Exchange Response Variance based on GO categories
+
+BNapusRNAHEsOnly<-c()
+for(Individ in names(BNapusRNASeqArray)){
+  BNapusRNAHEsOnly[[Individ]]<-anti_join(BNapusRNASeqArray[[Individ]],TwotoTwoHomoeo[[Individ]],by="TO1000_tName")
+}
+SubgenomeDominanceDFOnlyHEs<-rbindlist(BNapusRNAHEsOnly,use.names = T,idcol = "Indiv")
 
 
+SubgenomeDominance_w_DosageClassFromGO<-inner_join(SubgenomeDominanceDFOnlyHEs,BrassicaOtrho_DosageClassfromGO,by="TO1000GeneID") %>% inner_join(y=BNapusRNASeqArray$`RS-Parent`,by="TO1000_tName")
 
-```{r Get expression and GO information for all four kinds of homoeologous exchange events}
+
+#Plot average for dosage classes across all lines
+
+SubgenomeDominance_w_DosageClassFromGO %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>% mutate(HERV=sd(SumTPM.x/SumTPM.y)/mean(SumTPM.x/SumTPM.y)) %>% summarise(HERV) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% ggplot(aes(y=HERV,x=Class,fill=Class))+geom_point(position=position_jitterdodge(dodge.width = .75,jitter.width = .25))+geom_boxplot(width=0.5,outlier.shape = NA,alpha=0.75)+ylab("Homoeologous Exchange Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
+
+#Plot for Subgenome bias and dosage classes across all lines
+
+SubgenomeDominance_w_DosageClassFromGO %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class,Bias.y) %>% mutate(HERV=sd(SumTPM.x/SumTPM.y)/mean(SumTPM.x/SumTPM.y)) %>% summarise(HERV) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% ggplot(aes(y=HERV,x=Bias.y,fill=Class))+geom_point(position=position_jitterdodge(dodge.width = .75,jitter.width = .25))+geom_boxplot(outlier.shape = NA,alpha=0.75)+ylab("Homoeologous Exchange Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
+#Plot by generation
+
+SubgenomeDominance_w_DosageClassFromGO %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% group_by(GO,Class,Generation) %>% mutate(HERV=sd(SumTPM.x/SumTPM.y)/mean(SumTPM.x/SumTPM.y)) %>% summarise(HERV) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% ggplot(aes(y=HERV,x=Generation,fill=Class))+geom_point(position=position_jitterdodge(dodge.width = .75,jitter.width = .25))+geom_boxplot(outlier.shape = NA,alpha=0.75)+ylab("Homoeologous Exchange Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)+scale_x_discrete(limits=c("S1","S5","S10"))
+```
+
+# Calculate expression response to different kinds of homoeologous exchange events
+
+```{r}
 
 #ZeroToFour
 ZerotoFourHE<-list.files(path="~/Documents/Birdetal2020Data_and_Figures/WGS",pattern="ZerotoFour",full.names = T,)
@@ -226,7 +267,7 @@ IndivNames<-mixedsort(gsub(names,pattern = "RS-",replacement = ""))
 
 for(Individ in IndivNames){ 
     ZerotoFourHomoeo[[Individ]]<-subset(get(sprintf("RS-%s",Individ)),TO1000_tName %in% get(sprintf("Ds-%sZerotoFour",Individ))$TO1000)
-
+}
 names(ZerotoFourHomoeo)<-gsub(names(ZerotoFourHomoeo),pattern = "^",replacement = "RS-")
 
 
@@ -258,7 +299,7 @@ IndivNames<-mixedsort(gsub(names,pattern = "RS-",replacement = ""))
 
 for(Individ in IndivNames){ 
     OnetoThreeHomoeo[[Individ]]<-subset(get(sprintf("RS-%s",Individ)),TO1000_tName %in% get(sprintf("Ds-%sOnetoThree",Individ))$TO1000)
- 
+}
 names(OnetoThreeHomoeo)<-gsub(names(OnetoThreeHomoeo),pattern = "^",replacement = "RS-")
 
 
@@ -291,7 +332,7 @@ IndivNames<-mixedsort(gsub(names,pattern = "RS-",replacement = ""))
 
 for(Individ in IndivNames){ 
     OnetoThreeHomoeo[[Individ]]<-subset(get(sprintf("RS-%s",Individ)),TO1000_tName %in% get(sprintf("Ds-%sOnetoThree",Individ))$TO1000)
-
+}
 
 names(OnetoThreeHomoeo)<-gsub(names(OnetoThreeHomoeo),pattern = "^",replacement = "RS-")
 
@@ -324,7 +365,7 @@ IndivNames<-mixedsort(gsub(names,pattern = "RS-",replacement = ""))
 
 for(Individ in IndivNames){ 
     ThreetoOneHomoeo[[Individ]]<-subset(get(sprintf("RS-%s",Individ)),TO1000_tName %in% get(sprintf("Ds-%sThreetoOne",Individ))$TO1000)
-
+}
 names(ThreetoOneHomoeo)<-gsub(names(ThreetoOneHomoeo),pattern = "^",replacement = "RS-")
 
 
@@ -371,77 +412,48 @@ FourtoZero_w_DosageClassFromGO<-inner_join(SubgenomeDominanceDFFourtoZeroHEs,Bra
 
 ```
 
-```{r Calculate expression response to different kinds of homoeologous exchange events, combine the 4 HE classes, and calculate homoeologous exchange response variance}
+#analyze HERV for each dosage category seperately so all genes have same expected expression response against the 2:2 expression level
+```{r}
 
-#Total Comparison
-ZerotoFour_HERV<-ZerotoFour_w_DosageClassFromGO  %>% filter(R500TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>%  mutate(avg_exp_response=mean(SumTPM.x/((2*R500TPM.y)))) %>% mutate(sd_exp_response=sd(SumTPM.x/((2*R500TPM.y)))) %>% mutate(HERV=sd_exp_response/avg_exp_response) %>% mutate(dosage="0:4")
+#Total Comparison (Consider changing to analyzing each for against 2:2 so at least we're not mixing expectations)
+ZerotoFour_HERV<-ZerotoFour_w_DosageClassFromGO  %>% filter(R500TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>%  mutate(avg_exp_response=mean(SumTPM.x/SumTPM.y)) %>% mutate(sd_exp_response=sd(SumTPM.x/SumTPM.y)) %>% mutate(HERV=sd_exp_response/avg_exp_response) %>% mutate(dosage="0:4")
 
-OnetoThree_HERV<-OnetoThree_w_DosageClassFromGO  %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>% mutate(avg_exp_response=mean(SumTPM.x/((TO1000TPM.y+3*R500TPM.y)/2))) %>% mutate(sd_exp_response=sd(SumTPM.x/((TO1000TPM.y+3*R500TPM.y)/2))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="1:3")
+OnetoThree_HERV<-OnetoThree_w_DosageClassFromGO  %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>% mutate(avg_exp_response=mean(SumTPM.x/SumTPM.y)) %>% mutate(sd_exp_response=sd(SumTPM.x/SumTPM.y)) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="1:3")
 
-ThreetoOne_HERV<-ThreetoOne_w_DosageClassFromGO %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>% mutate(avg_exp_response=mean(SumTPM.x/((3*TO1000TPM.y+R500TPM.y)/2))) %>% mutate(sd_exp_response=sd(SumTPM.x/((3*TO1000TPM.y+R500TPM.y)/2))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="3:1")
+ThreetoOne_HERV<-ThreetoOne_w_DosageClassFromGO %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>% mutate(avg_exp_response=mean(SumTPM.x/(SumTPM.y))) %>% mutate(sd_exp_response=sd(SumTPM.x/(SumTPM.y))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="3:1")
 
-FourtoZero_HERV<-FourtoZero_w_DosageClassFromGO %>% filter(TO1000TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>%  mutate(avg_exp_response=mean(SumTPM.x/((2*TO1000TPM.y)))) %>% mutate(sd_exp_response=sd(SumTPM.x/((2*TO1000TPM.y)))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="4:0") 
+FourtoZero_HERV<-FourtoZero_w_DosageClassFromGO %>% filter(TO1000TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class) %>%  mutate(avg_exp_response=mean(SumTPM.x/SumTPM.y)) %>% mutate(sd_exp_response=sd(SumTPM.x/SumTPM.y)) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="4:0") 
 
 ReanalyHERVMain<-rbind(ZerotoFour_HERV,OnetoThree_HERV,ThreetoOne_HERV,FourtoZero_HERV) 
 
 HERV_Main_separate <-ReanalyHERVMain %>% group_by(GO,Class,dosage) %>% drop_na(HERV) %>% summarise(avg_exp_response,sd_exp_response,HERV,dosage) %>% mutate(count=n()) %>% distinct() 
 
-HERVMainPlot<- ReanalyHERVMain %>% drop_na(HERV) %>% summarise(avg_exp_response,sd_exp_response,HERV) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgHERV=mean(HERV),count=mean(count))
+HERVMainPlot<- ReanalyHERVMain %>% drop_na(HERV) %>% summarise(avg_exp_response,sd_exp_response,HERV,dosage) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgHERV=mean(HERV),count=mean(count))
 
-  HERVMainPlot %>% ggplot(aes(y=avgHERV,x=Class,fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+ylab("Homoeologous Exchange Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
-
-
-#Homoeolog Expression Bias Comparison
-
-ZerotoFour_HERV_HEB<-ZerotoFour_w_DosageClassFromGO  %>% filter(R500TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class,Bias.y) %>%  mutate(avg_exp_response=mean(SumTPM.x/((2*R500TPM.y)))) %>% mutate(sd_exp_response=sd(SumTPM.x/((2*R500TPM.y)))) %>% mutate(HERV=sd_exp_response/avg_exp_response) %>% mutate(dosage="0:4")
-
-OnetoThree_HERV_HEB<-OnetoThree_w_DosageClassFromGO   %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class,Bias.y) %>%  mutate(avg_exp_response=mean(SumTPM.x/((TO1000TPM.y+3*R500TPM.y)/2))) %>% mutate(sd_exp_response=sd(SumTPM.x/((TO1000TPM.y+3*R500TPM.y)/2))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="1:3")
- 
-
-ThreetoOne_HERV_HEB<-ThreetoOne_w_DosageClassFromGO %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class,Bias.y) %>%   mutate(avg_exp_response=mean(SumTPM.x/((3*TO1000TPM.y+R500TPM.y)/2))) %>% mutate(sd_exp_response=sd(SumTPM.x/((3*TO1000TPM.y+R500TPM.y)/2))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="3:1")
-
-FourtoZero_HERV_HEB<-FourtoZero_w_DosageClassFromGO  %>% filter(TO1000TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(GO,Class,Bias.y) %>% mutate(avg_exp_response=mean(SumTPM.x/((2*TO1000TPM.y)))) %>% mutate(sd_exp_response=sd(SumTPM.x/((2*TO1000TPM.y)))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="4:0") 
-  
-
-ReanalyHERV_HEB<-rbind(ZerotoFour_HERV_HEB,OnetoThree_HERV_HEB,ThreetoOne_HERV_HEB,FourtoZero_HERV_HEB) 
-
-HERV_HEB_Separate <- ReanalyHERV_HEB %>% group_by(GO,Class,Bias.y,dosage) %>% drop_na(HERV) %>% summarise(avg_exp_response,sd_exp_response,HERV,dosage) %>% mutate(count=n()) %>% distinct() 
-
-HERV_HEB_Plot <- ReanalyHERV_HEB %>% drop_na(HERV) %>% summarise(avg_exp_response,sd_exp_response,HERV) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgHERV=mean(HERV),count=mean(count)) 
-
-HERV_HEB_Plot %>% ggplot(aes(y=avgHERV,x=Bias.y,fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+ylab("Homoeologous Exchange Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
-
-
-# Generation Comparison
-
-ZerotoFour_HERV_Gen<-ZerotoFour_w_DosageClassFromGO  %>% filter(R500TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10")%>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% group_by(GO,Class,Generation) %>%  mutate(avg_exp_response=mean(SumTPM.x/((2*R500TPM.y)))) %>% mutate(sd_exp_response=sd(SumTPM.x/((2*R500TPM.y)))) %>% mutate(HERV=sd_exp_response/avg_exp_response) %>% mutate(dosage="0:4")
-
-OnetoThree_HERV_Gen<-OnetoThree_w_DosageClassFromGO  %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10")  %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% group_by(GO,Class,Generation) %>% mutate(avg_exp_response=mean(SumTPM.x/((TO1000TPM.y+3*R500TPM.y)/2))) %>% mutate(sd_exp_response=sd(SumTPM.x/((TO1000TPM.y+3*R500TPM.y)/2))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="1:3")
-
-ThreetoOne_HERV_Gen<-ThreetoOne_w_DosageClassFromGO  %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10")  %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% group_by(GO,Class,Generation) %>% mutate(avg_exp_response=mean(SumTPM.x/((3*TO1000TPM.y+R500TPM.y)/2))) %>% mutate(sd_exp_response=sd(SumTPM.x/((3*TO1000TPM.y+R500TPM.y)/2))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="3:1")
-
-FourtoZero_HERV_Gen<-FourtoZero_w_DosageClassFromGO  %>% filter(TO1000TPM.y > 0) %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% group_by(GO,Class,Generation) %>%  mutate(avg_exp_response=mean(SumTPM.x/((2*TO1000TPM.y)))) %>% mutate(sd_exp_response=sd(SumTPM.x/((2*TO1000TPM.y)))) %>% mutate(HERV=sd_exp_response/avg_exp_response)  %>% mutate(dosage="4:0") 
-
-ReanalyHERV_Gen<-rbind(ZerotoFour_HERV_Gen,OnetoThree_HERV_Gen,ThreetoOne_HERV_Gen,FourtoZero_HERV_Gen) 
-
-HERV_Gen_Separate<- ReanalyHERV_Gen %>% group_by(GO,Class,Generation,dosage) %>% drop_na(HERV) %>% summarise(avg_exp_response,sd_exp_response,HERV,dosage) %>% mutate(count=n()) %>% distinct() 
-
-HERV_Gen_Plot<-ReanalyHERV_Gen %>% drop_na(HERV) %>% summarise(HERV) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgHERV=mean(HERV),count=mean(count))
-
-HERV_Gen_Plot %>% ggplot(aes(y=avgHERV,x=Generation,fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+ylab("Homoeologous Exchange Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2) +scale_x_discrete(limits=c("S1","S5","S10"))
+HERVMainPlot %>% ggplot(aes(y=avgHERV,x=Class,fill=Class))+geom_point(position=position_jitterdodge(dodge.width = .75,jitter.width = 0.5))+geom_boxplot(width=0.5,outlier.shape = NA,alpha=0.75)+ylab("Homoeologous Exchange Response Variance")+theme_cowplot(12)+scale_fill_discrete(label=c("Dosage \n Insensitive","Dosage \n Sensitive"))+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
 
 ```
 
+#Compare Polyploid dosage response to HE dosage response to see if they are distinct
+
 ```{r compare HERV and PRV}
+
+HERV<-ReanalyHERVMain %>% group_by(GO,Class,dosage) %>% drop_na(HERV) %>% summarise(Response_Variance=HERV) %>% mutate(count=n()) %>% distinct() %>% filter(count>20)
+
+PRV<-TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% mutate(dosage="2:2") %>% group_by(GO,Class,dosage) %>% mutate(PRV=sd(SumTPM.x/SumTPM.y)/mean(SumTPM.x/SumTPM.y)) %>% summarise(Response_Variance=PRV)  %>% mutate(count=n()) %>% distinct() %>% filter(count>20)
+
+Plot_test<-rbind(HERV,PRV)
+
+ggplot(data=Plot_test,aes(x=dosage,y=Response_Variance,group=dosage,fill=dosage))+geom_jitter()+geom_boxplot(outlier.shape = NA,alpha=0.75)+theme_cowplot(12)+stat_compare_means(comparisons=list(c("2:2", "0:4"),c("2:2","1:3"),c("2:2","3:1"),c("2:2","4:0")),label = "p.signif",size=4.5,label.x = 2)+ylab("Coeficient of Variance")+facet_wrap(~Class)
 
 #Check Exp Lvl by GO term Class
 
 #Plot of Average TPM of homoeolog pairs in a GO term w/ > 20 genes comparing Class I and Class II avg expression for PRV dataset (2:2 homoeologs)
-TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% group_by(GO,Class) %>% summarise(SumTPM.x) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgSumTPM=mean(SumTPM.x)) %>% ggplot(data=.,aes(x=Class,y=avgSumTPM,fill=Class))+geom_boxplot(alpha=0.5)+ylim(0,400)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
+TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% group_by(GO,Class) %>% summarise(SumTPM.x) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgSumTPM=mean(SumTPM.x)) %>% ggplot(data=.,aes(x=Class,y=avgSumTPM,fill=Class))+geom_boxplot(outlier.shape = NA ,alpha=0.5)+ylim(0,400)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
 
 #Plot of Average TPM of homoeolog pairs in a GO term w/ > 20 genes comparing Class I and Class II avg expression for HERV dataset (HEs excluding likely aneuploids)
 
-ReanalyHERVMain %>% group_by(GO,Class) %>% summarise(SumTPM.x) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgSumTPM=mean(SumTPM.x)) %>% ggplot(data=.,aes(x=Class,y=avgSumTPM,fill=Class))+geom_boxplot(alpha=0.5)+ylim(0,400)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
+ReanalyHERVMain %>% group_by(GO,Class) %>% summarise(SumTPM.x) %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% summarise(avgSumTPM=mean(SumTPM.x)) %>% ggplot(data=.,aes(x=Class,y=avgSumTPM,fill=Class))+geom_boxplot(outlier.shape = NA,alpha=0.5)+ylim(0,400)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)
 
 
 #Check proportional breakdown of GO term Classes
@@ -449,43 +461,4 @@ ReanalyHERVMain %>% group_by(GO,Class) %>% summarise(SumTPM.x) %>% mutate(count=
 BalancedClassBrkdwn<-table(TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent")%>%group_by(Indiv)%>%summarise(Class))
 HEDosageClassBrkdwn<-table(ReanalyHERVMain %>% filter(!(Indiv == "RS-1100S10" & TO1000Chr.x =="C4")) %>%filter(TO1000Chr.x != "C1" & TO1000Chr.x !="C2" & R500Chr.x !="A10") %>% group_by(Indiv) %>% summarise(Class))
 
-##############################################################
-
-#Compare HERV and PRV overall
-Plot_1<-ReanalyHERVMain %>% drop_na(HERV) %>% summarise(HERV) %>% mutate(count_HE=n()) %>% distinct() %>% filter(count_HE>20) %>% mutate(HERV=mean(HERV)) %>% distinct(GO,Class, HERV,count_HE)
-Plot_2<-TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent")  %>% group_by(GO,Class) %>% mutate(PRV=sd(SumTPM.x/SumTPM.y)/mean(SumTPM.x/SumTPM.y)) %>% summarise(PRV)  %>% mutate(count_polyploid=n()) %>% distinct() %>% filter(count_polyploid>20) %>% distinct() 
-Plot_test<-inner_join(Plot_1,Plot_2,by=c("GO","Class"))
-Plot_test<-Plot_test%>%gather("Type","Variance",3,5)
-
-ggplot(data=Plot_test,aes(x=Type,y=Variance,group=interaction(Type,Class),fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)+ylab("Coefeicient of Variance")
- 
-ggplot(data=Plot_test,aes(x=Type,y=Variance,group=Type,fill=Type))+geom_jitter()+geom_boxplot(alpha=0.5)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)+ylab("Coeficient of Variance")
- 
-##############################################################
-#Compare HERV and PRV by homoeolog expression bias
-Plot_1<-ReanalyHERV_HEB  %>% drop_na(HERV) %>% summarise(HERV) %>% mutate(count_HE=n()) %>% distinct() %>% filter(count_HE>20) %>% mutate(HERV=mean(HERV)) %>% distinct(GO,Class, Bias.y,HERV,count_HE) 
-
-Plot_2<-TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent")  %>% group_by(GO,Class,Bias.y) %>% mutate(PRV=sd(SumTPM.x/SumTPM.y)/mean(SumTPM.x/SumTPM.y)) %>% summarise(PRV) %>% mutate(count_polyploid=n()) %>% distinct() %>% filter(count_polyploid>20) %>% distinct() 
-
-Plot_test<-inner_join(Plot_1,Plot_2,by=c("GO","Class","Bias.y"))
-
-Plot_test<-Plot_test%>%gather("Type","Variance",4,6)
-
-ggplot(data=Plot_test,aes(x=Type,y=Variance,group=interaction(Type,Class,Bias.y),fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)+ylab("Coefeicient of Variance")+facet_wrap(~Bias.y)
-  
-##############################################################
-
-#Compare HERV and PRV by generation
-Plot_1<-ReanalyHERV_Gen  %>% drop_na(HERV) %>% summarise(HERV) %>% mutate(count_HE=n()) %>% distinct() %>% filter(count_HE>20) %>% mutate(HERV=mean(HERV)) %>% distinct(GO,Class, Generation,HERV,count_HE) 
-
-
-Plot_2<-TwoTwo_w_DosageClassFromGO %>% filter(Indiv != "RS-Parent") %>% separate(Indiv,into=c("Line","Generation"),sep="00") %>% group_by(GO,Class,Generation) %>% mutate(PRV=sd(SumTPM.x/SumTPM.y)/mean(SumTPM.x/SumTPM.y)) %>% summarise(PRV)  %>% mutate(count=n()) %>% distinct() %>% filter(count>20) %>% distinct() 
-
-Plot_test<-inner_join(Plot_1,Plot_2,by=c("GO","Class","Generation"))
-
-Plot_test<-Plot_test%>%gather("Type","Variance",4,6)
-
-Plot_test$Generation<-factor(Plot_test$Generation,levels=c("S1","S5","S10"))
-
-ggplot(data=Plot_test,aes(x=Type,y=Variance,group=interaction(Type,Class,Generation),fill=Class))+geom_jitter()+geom_boxplot(alpha=0.5)+theme_cowplot(12)+stat_compare_means(method = "kruskal.test",label="p.format",size=4.5,label.x = 2)+ylab("Coefeicient of Variance")+facet_wrap(~Generation)
 ```
